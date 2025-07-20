@@ -18,3 +18,5 @@ git clone https://github.com/BrettmVincent/Headers.git
 ```bash
 python3 headers.py <email_file.eml>
 ```
+
+https://github.com/user-attachments/assets/52610d63-5b2c-41df-9db0-c649b425b820
