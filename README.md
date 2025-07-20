@@ -1,36 +1,20 @@
-# Headers
-**Headers** is a Python-based email header analysis tool designed to help security analysts, threat hunters, and incident responders quickly extract and visualize important information from `.eml` email files. It provides detailed parsing of common headers like `From`, `To`, `Subject`, `Authentication-Results`, and visually neat summaries of `Received` headers — highlighting the path the email took, with the closest hop to the recipient clearly marked.
+A Python tool for rapid analysis of raw email files (.eml) designed to aid security analysts and incident responders in phishing investigations and forensic email examination.
 
----
+**Features:**
 
-## Features
+- Parses and displays common email headers including From, To, Subject, Date, and Authentication-Results.
+- Extracts and formats complex Authentication-Results headers into readable tables.
+- Parses Received headers, breaking down routing details with timestamps.
+- Previews email body content (supports plain text and HTML).
+- Extracts URLs from the email body, performs DNS resolution to obtain IP addresses, and defangs both URLs and IPs for safe viewing.
+- Lists email attachments with metadata: filename, MIME type, size, and calculates MD5, SHA1, and SHA256 hashes for integrity and malware analysis.
+- Easy-to-use CLI interface — just provide the path to the .eml file.
 
-- Parses and displays key email headers in a clean, colorized terminal output  
-- Parses and formats `Authentication-Results` for easier interpretation  
-- Extracts and visually highlights the chain of `Received` headers (from oldest to newest)  
-- Previews the first 500 characters of the email body  
-- Lists any attachments with file names, types, and sizes  
-
-
----
-
-## Prerequisites
-
-- Python 3.6+ 
-
----
-
-## Installation & Usage
-
-```bash
-# Clone the repository
+**Installation**
+```
 git clone https://github.com/BrettmVincent/Headers.git
-cd headers
 ```
+**Usage:**
 ```bash
-# Run the tool on your .eml file
-python3 headers.py /path/to/email_file.eml
+python3 headers.py <email_file.eml>
 ```
-
-https://github.com/user-attachments/assets/587b9c63-888b-469f-8d3b-090e744aac97
-
