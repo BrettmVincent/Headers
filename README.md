@@ -24,7 +24,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/headers.git
+git clone https://github.com/BrettmVincent/Headers.git
 cd headers
 ```
 ```bash
