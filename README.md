@@ -1,5 +1,4 @@
 # Headers
-
 **Headers** is a Python-based email header analysis tool designed to help security analysts, threat hunters, and incident responders quickly extract and visualize important information from `.eml` email files. It provides detailed parsing of common headers like `From`, `To`, `Subject`, `Authentication-Results`, and visually neat summaries of `Received` headers — highlighting the path the email took, with the closest hop to the recipient clearly marked.
 
 ---
@@ -27,9 +26,8 @@
 # Clone the repository
 git clone https://github.com/yourusername/headers.git
 cd headers
-
-# Ensure Python 3 is installed
-python3 --version
-
+```
+```bash
 # Run the tool on your .eml file
 python3 headers.py /path/to/email_file.eml
+```
