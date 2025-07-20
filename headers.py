@@ -1,20 +1,25 @@
-import email
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich import box
+from pathlib import Path
 from email import policy
 from email.parser import BytesParser
-from email.utils import parsedate_to_datetime
-import sys
 import re
+import sys
+import socket
+from urllib.parse import urlparse
+import hashlib
 
-# Terminal color codes for nicer output — bolder, stronger “manly” colors
-class Colors:
-    HEADER = '\033[94;1m'   # Bright Blue
-    BLUE = '\033[96;1m'     # Bold Cyan
-    CYAN = '\033[97m'       # Bright White
-    GREEN = '\033[92;1m'    # Bright Green
-    YELLOW = '\033[93;1m'   # Bright Yellow
-    RED = '\033[91;1m'      # Bright Red
-    BOLD = '\033[1m'
-    ENDC = '\033[0m'
+console = Console()
+
+BRIGHT_TITLE_COLOR = "bright_cyan"
+
+def defang_url(url):
+    return url.replace("http://", "hxxp://").replace("https://", "hxxps://")
+
+def defang_ip(ip):
+    return ip.replace(".", "[.]")
 
 def print_banner():
     banner = r"""
@@ -24,13 +29,37 @@ def print_banner():
 ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗╚════██║
 ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║███████║
 ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝
+Author: Brett Vincent
     """
-    print(f"{Colors.HEADER}{banner}{Colors.ENDC}")
-    print(f"{Colors.CYAN}{Colors.BOLD}            Email Analysis Tool - by Brett Vincent{Colors.ENDC}\n")
+    console.print(
+        Panel(
+            banner,
+            title=f"[white]Email Analysis Tool[white]",
+            style=f"white",
+            box=box.ROUNDED,
+            border_style="grey50",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
+    console.print()
 
-def print_key_value(key, value, indent=2):
-    indent_space = ' ' * indent
-    print(f"{indent_space}{Colors.BOLD}{key}:{Colors.ENDC} {value}")
+def print_headers(headers):
+    lines = []
+    for key, value in headers.items():
+        lines.append(f"[white]{key}:[/white] {value}")
+    panel_content = "\n".join(lines)
+    console.print(
+        Panel(
+            panel_content,
+            title=f"[bold {BRIGHT_TITLE_COLOR}]Email Headers[/bold {BRIGHT_TITLE_COLOR}]",
+            box=box.ROUNDED,
+            border_style="grey50",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
+    console.print()
 
 def parse_authentication_results(header_value):
     parts = [part.strip() for part in header_value.split(';') if part.strip()]
@@ -47,22 +76,15 @@ def parse_authentication_results(header_value):
     return parsed
 
 def print_authentication_results(header_value):
-    print(f"  {Colors.BOLD}Authentication Results:{Colors.ENDC}")
     parsed_results = parse_authentication_results(header_value)
+    table = Table(title=f"[bold {BRIGHT_TITLE_COLOR}]Authentication Results[/bold {BRIGHT_TITLE_COLOR}]", box=box.ROUNDED, border_style="grey50", expand=True, show_lines=True)
+    table.add_column("Method", style="white", justify="left")
+    table.add_column("Result", style="white", justify="left")
+    table.add_column("Details", style="white", justify="left")
     for method, result, params in parsed_results:
-        res_lower = result.lower()
-        if res_lower == 'pass':
-            color = Colors.GREEN
-        elif res_lower == 'fail':
-            color = Colors.RED
-        elif res_lower == 'neutral':
-            color = Colors.YELLOW
-        else:
-            color = Colors.CYAN
-        line = f"    {Colors.CYAN}{method}{Colors.ENDC} = {color}{result}{Colors.ENDC}"
-        if params:
-            line += f" ({params})"
-        print(line)
+        table.add_row(method, result, params)
+    console.print(table)
+    console.print()
 
 def parse_received_header(received_header):
     parts = {
@@ -89,33 +111,146 @@ def parse_received_header(received_header):
     return parts
 
 def print_received_headers(received_headers):
-    print(f"\n{Colors.BOLD}Received Headers (most recent to oldest):{Colors.ENDC}")
+    lines = []
     for idx, header in enumerate(reversed(received_headers), 1):
         parsed = parse_received_header(header)
-        # Highlight the first parsed (closest to recipient) in bright green
-        label_color = Colors.GREEN if idx == 1 else Colors.YELLOW
-        print(f"  [{idx}] {label_color}Received Header Summary:{Colors.ENDC}")
+        lines.append(f"[white]Received Header #{idx}[white]")
         for key in ['from', 'by', 'with', 'id', 'for', 'date']:
             value = parsed.get(key)
             if value:
-                print(f"    {Colors.CYAN}{key.capitalize():6}:{Colors.ENDC} {value}")
-        print()
+                lines.append(f"[white]{key.capitalize():6}:[/white] {value}")
+        lines.append("")
+    panel_content = "\n".join(lines)
+    console.print(
+        Panel(
+            panel_content,
+            title=f"[bold {BRIGHT_TITLE_COLOR}]Received Headers[/bold {BRIGHT_TITLE_COLOR}]",
+            box=box.ROUNDED,
+            border_style="grey50",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
+    console.print()
 
 def extract_received_headers(msg):
     return msg.get_all('Received', [])
 
+def extract_urls(text):
+    return re.findall(r'https?://\S+', text)
+
+def get_email_bodies(msg):
+    bodies = []
+    if msg.is_multipart():
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            if ctype in ['text/plain', 'text/html']:
+                try:
+                    bodies.append(part.get_content())
+                except:
+                    continue
+    else:
+        bodies.append(msg.get_content())
+    return bodies
+
+def print_email_body_and_urls(msg):
+    bodies = get_email_bodies(msg)
+    all_urls = []
+    preview_texts = []
+    for body in bodies:
+        preview_texts.append(body[:500].replace('\n', ' ').strip())
+        urls = extract_urls(body)
+        all_urls.extend(urls)
+
+    preview = "\n\n---\n\n".join(preview_texts)
+    console.print(
+        Panel(
+            preview,
+            title=f"[bold {BRIGHT_TITLE_COLOR}]Email Body Preview[/bold {BRIGHT_TITLE_COLOR}]",
+            title_align="center",
+            box=box.ROUNDED,
+            border_style="grey50",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
+    console.print()
+
+    unique_urls = list(set(all_urls))
+    if unique_urls:
+        table = Table(title=f"[bold {BRIGHT_TITLE_COLOR}]Extracted URLs with IPs[/bold {BRIGHT_TITLE_COLOR}]", box=box.ROUNDED, border_style="grey50", expand=True, show_lines=True)
+        table.add_column("URL", style="white", justify="left")
+        table.add_column("IP Address", style="white", justify="left")
+        for url in unique_urls:
+            try:
+                parsed = urlparse(url)
+                ip = socket.gethostbyname(parsed.hostname) if parsed.hostname else "N/A"
+            except Exception:
+                ip = "Resolution Failed"
+            table.add_row(defang_url(url), defang_ip(ip) if ip != "N/A" else ip)
+        console.print(table)
+        console.print()
+    else:
+        console.print(
+            Panel(
+                f"[bold white]URLs:[/bold white] None found",
+                box=box.ROUNDED,
+                border_style="grey50",
+                padding=(1, 2),
+                expand=True,
+            )
+        )
+        console.print()
+
+def print_attachments(attachments):
+    if attachments:
+        table = Table(title="Attachments", box=box.ROUNDED, border_style="grey50", expand=True, show_lines=True)
+        table.add_column("File Name", style="white", justify="left")
+        table.add_column("MIME Type", style="white", justify="left")
+        table.add_column("Size (bytes)", style="white", justify="left")
+        table.add_column("MD5 Hash", style="white", justify="left")
+        table.add_column("SHA1 Hash", style="white", justify="left")
+        table.add_column("SHA256 Hash", style="white", justify="left")
+        for filename, ctype, size, md5, sha1, sha256 in attachments:
+            table.add_row(filename or "(no filename)", ctype, str(size), md5, sha1, sha256)
+        console.print(table)
+        console.print()
+    else:
+        console.print(
+            Panel(
+                f"[bold white]Attachments:[/bold white] None",
+                box=box.ROUNDED,
+                border_style="grey50",
+                padding=(1, 2),
+                expand=True,
+            )
+        )
+        console.print()
+
 def analyze_email(file_path):
+    path = Path(file_path)
+    if not path.exists():
+        console.print(f"[red]File not found: {file_path}[/red]")
+        sys.exit(1)
+
     try:
-        with open(file_path, 'rb') as f:
+        with open(path, 'rb') as f:
             msg = BytesParser(policy=policy.default).parse(f)
     except Exception as e:
-        print(f"{Colors.RED}Failed to read or parse email file: {e}{Colors.ENDC}")
+        console.print(f"[red]Failed to read or parse email file: {e}[/red]")
         sys.exit(1)
 
     print_banner()
-
-    print(f"{Colors.HEADER}{Colors.BOLD}Email Analysis Report{Colors.ENDC}")
-    print(f"{Colors.BLUE}File: {file_path}{Colors.ENDC}\n")
+    console.print(
+        Panel(
+            f"[bold white]Analyzing file:[/bold white] {path.name}",
+            box=box.ROUNDED,
+            border_style="grey50",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
+    console.print()
 
     headers_of_interest = [
         "From", "To", "Cc", "Bcc", "Date", "Subject",
@@ -124,51 +259,44 @@ def analyze_email(file_path):
     ]
 
     headers = {}
+    auth_results = None
     for header in headers_of_interest:
         value = msg.get(header)
         if value:
-            headers[header] = value
+            if header.lower() == "authentication-results":
+                auth_results = value
+            else:
+                headers[header] = value
 
-    for k, v in headers.items():
-        if k.lower() == 'authentication-results':
-            print_authentication_results(v)
-        else:
-            print_key_value(k, v)
+    if headers:
+        print_headers(headers)
+    if auth_results:
+        print_authentication_results(auth_results)
 
     received_headers = extract_received_headers(msg)
     if received_headers:
         print_received_headers(received_headers)
 
-    print(f"\n{Colors.BOLD}Email Body Preview:{Colors.ENDC}")
-    if msg.is_multipart():
-        parts = [part for part in msg.walk() if part.get_content_type() == 'text/plain']
-        if parts:
-            body = parts[0].get_content()
-        else:
-            body = "(No plain text body found)"
-    else:
-        body = msg.get_content()
-
-    preview = body[:500].replace('\n', ' ').strip() if body else "(No body found)"
-    print(f"  {preview}\n")
+    print_email_body_and_urls(msg)
 
     attachments = []
     for part in msg.iter_attachments():
         filename = part.get_filename()
         content_type = part.get_content_type()
-        size = len(part.get_content()) if part.get_content() else 0
-        attachments.append((filename, content_type, size))
-
-    if attachments:
-        print(f"{Colors.BOLD}Attachments:{Colors.ENDC}")
-        for i, (filename, ctype, size) in enumerate(attachments, 1):
-            print(f"  [{i}] {filename or '(no filename)'} - {ctype} - {size} bytes")
-    else:
-        print(f"{Colors.BOLD}Attachments:{Colors.ENDC} None")
+        raw_content = part.get_content()
+        size = len(raw_content) if raw_content else 0
+        if raw_content:
+            md5_hash = hashlib.md5(raw_content).hexdigest()
+            sha1_hash = hashlib.sha1(raw_content).hexdigest()
+            sha256_hash = hashlib.sha256(raw_content).hexdigest()
+        else:
+            md5_hash = sha1_hash = sha256_hash = ""
+        attachments.append((filename, content_type, size, md5_hash, sha1_hash, sha256_hash))
+    print_attachments(attachments)
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print(f"Usage: python {sys.argv[0]} <email_file.eml>")
+        console.print(f"[red]Usage: python {sys.argv[0]} <email_file.eml>[/red]")
         sys.exit(1)
 
     analyze_email(sys.argv[1])
