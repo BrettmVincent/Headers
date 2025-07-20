@@ -31,3 +31,6 @@ cd headers
 # Run the tool on your .eml file
 python3 headers.py /path/to/email_file.eml
 ```
+
+https://github.com/user-attachments/assets/587b9c63-888b-469f-8d3b-090e744aac97
+
